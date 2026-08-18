@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Systems</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>System Overview</h1>
+    <div class="stat-grid">
+      <div class="stat-card blue"><h3>Total Systems</h3><p id="total-sys">--</p></div>
+      <div class="stat-card green"><h3>Active</h3><p id="active-sys">--</p></div>
+      <div class="stat-card yellow"><h3>Idle</h3><p id="idle-sys">--</p></div>
+      <div class="stat-card red"><h3>Inactive</h3><p id="inactive-sys">--</p></div>
+    </div>
+    <div class="filter-bar">
+      <input type="text" id="search-sys" placeholder="Search system or IP..." />
+      <select id="filter-dept">
+        <option value="">All Departments</option>
+        <option value="IT">IT</option>
+        <option value="HR">HR</option>
+        <option value="Finance">Finance</option>
+        <option value="Sales">Sales</option>
+      </select>
+      <button onclick="filterSystems()">🔍 Search</button>
+      <button onclick="resetFilter()" style="background:#334155;">↺ Reset</button>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr><th>System</th><th>IP</th><th>Department</th><th>Last User</th>
+            <th>Last Login</th><th>Last Logout</th><th>Sessions</th><th>Status</th><th>Logs</th></tr>
+      </thead>
+      <tbody id="sys-body"></tbody>
+    </table>
+  </main>
+</div>
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin','IT Admin'])) {
+    alert('Access Denied!');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('systems');
+
+  let allSystems = [];
+
+  async function loadSystems() {
+    try {
+      const res  = await fetch('http://localhost:5000/api/systems');
+      allSystems = await res.json();
+      renderSystems(allSystems);
+    } catch(err) { console.error(err); }
+  }
+
+  function renderSystems(systems) {
+    document.getElementById('total-sys').textContent    = systems.length;
+    document.getElementById('active-sys').textContent   = systems.filter(s=>s.status==='active').length;
+    document.getElementById('idle-sys').textContent     = systems.filter(s=>s.status==='idle').length;
+    document.getElementById('inactive-sys').textContent = systems.filter(s=>s.status==='inactive').length;
+
+    document.getElementById('sys-body').innerHTML = systems.map(s => `
+      <tr>
+        <td><strong>${s.system_name}</strong></td>
+        <td style="color:#94a3b8;">${s.ip_address}</td>
+        <td>${s.department}</td>
+        <td>${s.last_user||'—'}</td>
+        <td style="font-size:0.85rem;">${s.last_login}</td>
+        <td style="font-size:0.85rem;">${s.last_logout}</td>
+        <td>${s.sessions||0}</td>
+        <td>${statusBadge(s.status)}</td>
+        <td><a href="system-logs.html?system=${s.system_name}"
+          style="color:#3b82f6;font-size:0.85rem;">📋 View</a></td>
+      </tr>`).join('');
+  }
+
+  function statusBadge(status) {
+    return status==='active'  ? `<span class="badge-enabled">Active</span>` :
+           status==='idle'    ? `<span class="badge" style="background:#f59e0b;color:white;">Idle</span>` :
+           `<span class="badge-disabled">Inactive</span>`;
+  }
+
+  function filterSystems() {
+    const search = document.getElementById('search-sys').value.toLowerCase();
+    const dept   = document.getElementById('filter-dept').value;
+    renderSystems(allSystems.filter(s =>
+      (!search || s.system_name.toLowerCase().includes(search) || s.ip_address.includes(search)) &&
+      (!dept   || s.department===dept)
+    ));
+  }
+
+  function resetFilter() {
+    document.getElementById('search-sys').value  = '';
+    document.getElementById('filter-dept').value = '';
+    renderSystems(allSystems);
+  }
+
+  loadSystems();
+</script>
+</body>
+</html>

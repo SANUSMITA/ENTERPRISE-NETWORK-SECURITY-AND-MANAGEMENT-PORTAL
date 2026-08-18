@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Login History</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>Portal Login History</h1>
+    <div class="filter-bar">
+      <input type="text" id="filter-username" placeholder="Search username..." />
+      <select id="filter-status">
+        <option value="">All</option>
+        <option value="success">Success</option>
+        <option value="failed">Failed</option>
+      </select>
+      <button onclick="fetchHistory(1)">🔍 Search</button>
+      <button onclick="resetFilter()" style="background:#334155;">↺ Reset</button>
+    </div>
+    <div class="stat-grid" style="margin-bottom:1.5rem;">
+      <div class="stat-card blue"><h3>Total Attempts</h3><p id="total-attempts">--</p></div>
+      <div class="stat-card green"><h3>Successful</h3><p id="successful">--</p></div>
+      <div class="stat-card red"><h3>Failed</h3><p id="failed">--</p></div>
+      <div class="stat-card yellow"><h3>Unique Users</h3><p id="unique-users">--</p></div>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr><th>Timestamp</th><th>Username</th><th>Role</th><th>IP Address</th><th>Status</th></tr>
+      </thead>
+      <tbody id="history-body"></tbody>
+    </table>
+    <div id="pagination"></div>
+  </main>
+</div>
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin'])) {
+    alert('Access Denied! Super Admin only.');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('login-history');
+
+  async function fetchHistory(page = 1) {
+    const username = document.getElementById('filter-username').value;
+    const status   = document.getElementById('filter-status').value;
+    try {
+      const res  = await fetch(`http://localhost:5000/api/login-history?username=${username}&status=${status}&page=${page}`);
+      const data = await res.json();
+
+      document.getElementById('total-attempts').textContent = data.total_records||0;
+      document.getElementById('successful').textContent     = data.logs.filter(l=>l.status==='success').length;
+      document.getElementById('failed').textContent         = data.logs.filter(l=>l.status==='failed').length;
+      document.getElementById('unique-users').textContent   = new Set(data.logs.map(l=>l.username)).size;
+
+      document.getElementById('history-body').innerHTML = data.logs.map(log => `
+        <tr class="${log.status==='failed'?'row-deny':''}">
+          <td>${log.timestamp}</td>
+          <td><strong>${log.username}</strong></td>
+          <td><span class="badge" style="background:#3b82f6;color:white;">${log.role||'Unknown'}</span></td>
+          <td style="color:#94a3b8;">${log.ip_address||'—'}</td>
+          <td><span class="badge ${log.status==='success'?'ALLOW':'DENY'}">${log.status}</span></td>
+        </tr>`).join('');
+
+      document.getElementById('pagination').innerHTML =
+        Array.from({length:data.total_pages},(_,i)=>
+          `<button onclick="fetchHistory(${i+1})" class="${i+1===page?'active':''}">${i+1}</button>`
+        ).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  function resetFilter() {
+    document.getElementById('filter-username').value = '';
+    document.getElementById('filter-status').value   = '';
+    fetchHistory(1);
+  }
+
+  fetchHistory();
+</script>
+</body>
+</html>

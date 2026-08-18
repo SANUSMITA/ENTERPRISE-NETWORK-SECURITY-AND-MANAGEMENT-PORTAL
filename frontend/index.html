@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetAdmin Pro | Login</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>  <!-- ← added here -->
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h2>⚡ NetAdmin Pro</h2>
+    <p>Enterprise Network & AD Management</p>
+    <input type="text"     id="username" placeholder="Username" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Login</button>
+    <p id="error-msg" style="color:red; margin-top:10px;"></p>
+  </div>
+
+  <script>
+    // If already logged in → go to dashboard
+    if (localStorage.getItem('token')) {
+      window.location.href = 'threat-intel.html';
+    }
+
+ async function login() {
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const errorMsg = document.getElementById('error-msg');
+
+  if (!username || !password) {
+    errorMsg.textContent = 'Please fill all fields';
+    return;
+  }
+
+  try {
+    const res  = await fetch('http://localhost:5000/api/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      localStorage.setItem('token',     data.token);
+      localStorage.setItem('user',      data.username);
+      localStorage.setItem('full_name', data.full_name);
+      localStorage.setItem('role',      data.role);
+      window.location.href = 'dashboard.html';
+
+    } else {
+      // Message ke hisaab se alag error dikhao
+      if (data.message === 'restricted') {
+        errorMsg.style.color = '#f59e0b'; // yellow
+        errorMsg.textContent = '⚠ Access Restricted! Contact admin to set your password.';
+      } else {
+        errorMsg.style.color = '#ef4444'; // red
+        errorMsg.textContent = '❌ Invalid credentials. Please try again.';
+      }
+    }
+
+  } catch(err) {
+    errorMsg.style.color = '#ef4444';
+    errorMsg.textContent = 'Cannot connect to server. Is Flask running?';
+  }
+}
+
+     
+  </script>
+</body>
+</html>

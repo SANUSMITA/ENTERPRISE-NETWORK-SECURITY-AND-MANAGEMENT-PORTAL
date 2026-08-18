@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Log Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>Firewall Log Viewer</h1>
+    <div class="filter-bar">
+      <input type="text" id="filter-ip" placeholder="Source IP..." />
+      <select id="filter-action">
+        <option value="">All Actions</option>
+        <option value="ALLOW">Allow</option>
+        <option value="DENY">Deny</option>
+      </select>
+      <input type="date" id="filter-date" />
+      <button onclick="fetchLogs(1)">🔍 Search</button>
+      <button onclick="resetFilters()" style="background:#334155;">↺ Reset</button>
+      <button onclick="exportCSV()" style="background:#22c55e;">⬇ Export CSV</button>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th><th>Source IP</th><th>Dest IP</th>
+          <th>Port</th><th>Protocol</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+    <div id="pagination"></div>
+  </main>
+</div>
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin','IT Admin'])) {
+    alert('Access Denied!');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('logs');
+
+  async function fetchLogs(page = 1) {
+    const ip     = document.getElementById('filter-ip').value;
+    const action = document.getElementById('filter-action').value;
+    const date   = document.getElementById('filter-date').value;
+    try {
+      const res  = await fetch(`http://localhost:5000/api/logs?ip=${ip}&action=${action}&date=${date}&page=${page}`);
+      const data = await res.json();
+      const tbody = document.getElementById('log-body');
+      if (!data.logs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:2rem;">No logs found</td></tr>';
+      } else {
+        tbody.innerHTML = data.logs.map(log => `
+          <tr class="${log.action==='DENY'?'row-deny':''}">
+            <td>${log.timestamp}</td><td>${log.src_ip}</td><td>${log.dst_ip}</td>
+            <td>${log.port}</td><td>${log.protocol}</td>
+            <td><span class="badge ${log.action}">${log.action}</span></td>
+          </tr>`).join('');
+      }
+      document.getElementById('pagination').innerHTML =
+        Array.from({length:data.total_pages},(_,i)=>
+          `<button onclick="fetchLogs(${i+1})" class="${i+1===page?'active':''}">${i+1}</button>`
+        ).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  function resetFilters() {
+    document.getElementById('filter-ip').value     = '';
+    document.getElementById('filter-action').value = '';
+    document.getElementById('filter-date').value   = '';
+    fetchLogs(1);
+  }
+
+  function exportCSV() { window.open('http://localhost:5000/api/logs/export'); }
+  fetchLogs();
+</script>
+</body>
+</html>

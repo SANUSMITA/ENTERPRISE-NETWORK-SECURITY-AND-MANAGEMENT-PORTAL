@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Portal Users</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>Portal Users</h1>
+    <p style="color:#94a3b8;margin-bottom:1.5rem;">
+      Users are automatically added when they first login.
+    </p>
+    <div class="stat-grid">
+      <div class="stat-card blue"><h3>Total Users</h3><p id="total-users">--</p></div>
+      <div class="stat-card green"><h3>Active</h3><p id="active-users">--</p></div>
+      <div class="stat-card red"><h3>Inactive</h3><p id="inactive-users">--</p></div>
+      <div class="stat-card yellow"><h3>Total Logins</h3><p id="total-logins">--</p></div>
+    </div>
+    <div class="filter-bar">
+      <input type="text" id="search-user" placeholder="Search username..." />
+      <select id="filter-role">
+        <option value="">All Roles</option>
+        <option value="Super Admin">Super Admin</option>
+        <option value="IT Admin">IT Admin</option>
+        <option value="HR Admin">HR Admin</option>
+        <option value="Viewer">Viewer</option>
+      </select>
+      <button onclick="loadUsers()">🔍 Search</button>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr><th>Username</th><th>Full Name</th><th>Role</th><th>Status</th>
+            <th>Login Count</th><th>Last Login</th><th>Joined</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="user-body"></tbody>
+    </table>
+  </main>
+</div>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box">
+    <h3>✏ Edit User Role</h3>
+    <input type="hidden" id="edit-id" />
+    <p id="edit-username" style="color:#94a3b8;margin-bottom:0.5rem;"></p>
+    <select id="edit-role">
+      <option value="Super Admin">Super Admin</option>
+      <option value="IT Admin">IT Admin</option>
+      <option value="HR Admin">HR Admin</option>
+      <option value="Viewer">Viewer</option>
+    </select>
+    <select id="edit-status">
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="saveUser()">💾 Save</button>
+      <button class="btn-gray"    onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin'])) {
+    alert('Access Denied! Super Admin only.');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('portal-users');
+
+  let allUsers = [];
+
+  async function loadUsers() {
+    try {
+      const res = await fetch('http://localhost:5000/api/portal-users');
+      allUsers  = await res.json();
+
+      const search = document.getElementById('search-user').value.toLowerCase();
+      const role   = document.getElementById('filter-role').value;
+      const filtered = allUsers.filter(u =>
+        (!search || u.username.toLowerCase().includes(search)) &&
+        (!role   || u.role===role)
+      );
+
+      document.getElementById('total-users').textContent    = allUsers.length;
+      document.getElementById('active-users').textContent   = allUsers.filter(u=>u.status==='active').length;
+      document.getElementById('inactive-users').textContent = allUsers.filter(u=>u.status==='inactive').length;
+      document.getElementById('total-logins').textContent   = allUsers.reduce((a,u)=>a+(u.login_count||0),0);
+
+      document.getElementById('user-body').innerHTML = filtered.map(u => `
+        <tr>
+          <td><strong>${u.username}</strong></td>
+          <td>${u.full_name||'—'}</td>
+          <td>${roleBadge(u.role)}</td>
+          <td>${u.status==='active'
+            ? '<span class="badge-enabled">Active</span>'
+            : '<span class="badge-disabled">Inactive</span>'}</td>
+          <td style="text-align:center;">${u.login_count||0}</td>
+          <td style="font-size:0.85rem;color:#94a3b8;">${u.last_login}</td>
+          <td style="font-size:0.85rem;color:#64748b;">${u.created_at.split(' ')[0]}</td>
+          <td><div class="action-btns">
+            <button class="btn-sm edit" onclick="openEdit(${u.id},'${u.role}','${u.status}','${u.username}')">✏ Edit</button>
+            <button class="btn-sm delete" onclick="deleteUser(${u.id})">🗑</button>
+          </div></td>
+        </tr>`).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  function roleBadge(role) {
+    const colors = {'Super Admin':'#ef4444','IT Admin':'#3b82f6','HR Admin':'#22c55e','Viewer':'#64748b'};
+    return `<span class="badge" style="background:${colors[role]||'#64748b'};color:white;">${role}</span>`;
+  }
+
+  function openEdit(id, role, status, username) {
+    document.getElementById('edit-id').value             = id;
+    document.getElementById('edit-role').value           = role;
+    document.getElementById('edit-status').value         = status;
+    document.getElementById('edit-username').textContent = `User: ${username}`;
+    document.getElementById('editModal').classList.add('active');
+  }
+
+  async function saveUser() {
+    const id     = document.getElementById('edit-id').value;
+    const role   = document.getElementById('edit-role').value;
+    const status = document.getElementById('edit-status').value;
+    await fetch(`http://localhost:5000/api/portal-users/${id}`, {
+      method:  'PUT',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({role,status})
+    });
+    closeModal(); loadUsers();
+  }
+
+  async function deleteUser(id) {
+    if (!confirm('Remove this user?')) return;
+    await fetch(`http://localhost:5000/api/portal-users/${id}`, {method:'DELETE'});
+    loadUsers();
+  }
+
+  function closeModal() { document.getElementById('editModal').classList.remove('active'); }
+  loadUsers();
+</script>
+</body>
+</html>

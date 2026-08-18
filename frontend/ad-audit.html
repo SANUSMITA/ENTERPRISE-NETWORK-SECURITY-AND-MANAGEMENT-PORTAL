@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Audit Log</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>AD Audit Log</h1>
+    <div class="filter-bar">
+      <select id="filter-action">
+        <option value="">All Actions</option>
+        <option value="CREATE">Create</option>
+        <option value="DELETE">Delete</option>
+        <option value="MODIFY">Modify</option>
+        <option value="LOCK">Lock</option>
+        <option value="RESET">Reset</option>
+      </select>
+      <input type="date" id="filter-date" />
+      <button onclick="renderAudit(allLogs)">🔍 Filter</button>
+      <button onclick="resetFilter()" style="background:#334155;">↺ Reset</button>
+      <button onclick="exportAudit()" style="background:#22c55e;">⬇ Export CSV</button>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr><th>Timestamp</th><th>Admin</th><th>Action</th>
+            <th>Target</th><th>Details</th><th>Status</th></tr>
+      </thead>
+      <tbody id="audit-body"></tbody>
+    </table>
+  </main>
+</div>
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin','HR Admin'])) {
+    alert('Access Denied!');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('ad-audit');
+
+  let allLogs = [];
+
+  async function loadAudit() {
+    try {
+      const res = await fetch('http://localhost:5000/api/ad/audit');
+      allLogs   = await res.json();
+      renderAudit(allLogs);
+    } catch(err) { console.error(err); }
+  }
+
+  function renderAudit(logs) {
+    const action = document.getElementById('filter-action').value;
+    const date   = document.getElementById('filter-date').value;
+    const filtered = logs.filter(l =>
+      (!action || l.action===action) &&
+      (!date   || l.timestamp.startsWith(date))
+    );
+    const colors = {CREATE:'#22c55e',DELETE:'#ef4444',MODIFY:'#3b82f6',LOCK:'#f59e0b',RESET:'#8b5cf6'};
+    document.getElementById('audit-body').innerHTML = filtered.map(log => `
+      <tr>
+        <td>${log.timestamp}</td><td>${log.admin}</td>
+        <td><span class="badge" style="background:${colors[log.action]||'#64748b'};color:white;">${log.action}</span></td>
+        <td>${log.target_user}</td>
+        <td style="color:#94a3b8;font-size:0.85rem;">${log.details}</td>
+        <td><span class="badge ${log.status==='success'?'ALLOW':'DENY'}">${log.status}</span></td>
+      </tr>`).join('');
+  }
+
+  function resetFilter() {
+    document.getElementById('filter-action').value = '';
+    document.getElementById('filter-date').value   = '';
+    renderAudit(allLogs);
+  }
+
+  function exportAudit() {
+    const rows = [['Timestamp','Admin','Action','Target','Details','Status']];
+    allLogs.forEach(l=>rows.push([l.timestamp,l.admin,l.action,l.target_user,l.details,l.status]));
+    const csv  = rows.map(r=>r.join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = 'ad_audit.csv';
+    a.click();
+  }
+
+  loadAudit();
+</script>
+</body>
+</html>

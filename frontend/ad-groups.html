@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Groups & OUs</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>Groups & Organizational Units</h1>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <h2>🗂 Security Groups</h2>
+          <button class="btn-primary" onclick="addGroup()">➕ Add</button>
+        </div>
+        <table class="log-table">
+          <thead><tr><th>Group Name</th><th>Members</th><th>Description</th><th>Action</th></tr></thead>
+          <tbody id="group-body"></tbody>
+        </table>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <h2>🏢 Organizational Units</h2>
+          <button class="btn-primary" onclick="addOU()">➕ Add</button>
+        </div>
+        <table class="log-table">
+          <thead><tr><th>OU Name</th><th>Users</th><th>Path</th><th>Action</th></tr></thead>
+          <tbody id="ou-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  checkLogin();
+if (!hasPermission(['Super Admin','HR Admin'])) {
+  alert('Access Denied!');
+  window.location.href = 'dashboard.html';
+}
+buildSidebar('ad-groups');
+
+async function loadGroups() {
+  try {
+    const res  = await fetch('http://localhost:5000/api/ad/groups');
+    const data = await res.json();
+    renderGroups(data.groups);
+    renderOUs(data.ous);
+  } catch(err) { console.error(err); }
+}
+
+function renderGroups(groups) {
+  document.getElementById('group-body').innerHTML = groups.map(g => `
+    <tr>
+      <td>${g.name}</td>
+      <td>${g.members}</td>
+      <td>${g.description||'—'}</td>
+      <td><button class="btn-sm delete" onclick="deleteGroup('${g.name}')">🗑</button></td>
+    </tr>`).join('');
+}
+
+function renderOUs(ous) {
+  document.getElementById('ou-body').innerHTML = ous.map(o => `
+    <tr>
+      <td>${o.name}</td>
+      <td>${o.users}</td>
+      <td style="font-size:0.8rem;color:#94a3b8;">${o.path}</td>
+      <td><button class="btn-sm delete" onclick="deleteOU('${o.name}')">🗑</button></td>
+    </tr>`).join('');
+}
+
+async function addGroup() {
+  const name = prompt('Group name:');
+  const desc = prompt('Description:');
+  if (!name) return;
+  await fetch('http://localhost:5000/api/ad/groups', {
+    method:  'POST',
+    headers: {'Content-Type':'application/json'},
+    body:    JSON.stringify({name, desc, members: 0})
+  });
+  loadGroups(); // reload from MySQL
+}
+
+async function addOU() {
+  const name = prompt('OU name (e.g. Marketing):');
+  if (!name) return;
+  
+  const res = await fetch('http://localhost:5000/api/ad/ous', {
+    method:  'POST',
+    headers: {'Content-Type':'application/json'},
+    body:    JSON.stringify({name, users: 0})
+  });
+  
+  if (res.ok) {
+    alert(`✅ "${name} Department" OU created! Now visible in AD Users department dropdown.`);
+    loadGroups(); // MySQL se reload
+  }
+}
+
+async function deleteGroup(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  await fetch(`http://localhost:5000/api/ad/groups/${name}`, {method:'DELETE'});
+  loadGroups();
+}
+
+async function deleteOU(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  await fetch(`http://localhost:5000/api/ad/ous/${name}`, {method:'DELETE'});
+  loadGroups();
+}
+
+loadGroups();
+  
+</script>
+</body>
+</html>

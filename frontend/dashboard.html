@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>Dashboard Overview</h1>
+    <div class="stat-grid">
+      <div class="stat-card blue"><h3>Total Logs Today</h3><p id="total-logs">--</p></div>
+      <div class="stat-card red"><h3>Blocked Connections</h3><p id="blocked">--</p></div>
+      <div class="stat-card green"><h3>Allowed Connections</h3><p id="allowed">--</p></div>
+      <div class="stat-card yellow"><h3>Unique Source IPs</h3><p id="unique-ips">--</p></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-box"><h3>Allow vs Block</h3><canvas id="pieChart"></canvas></div>
+      <div class="chart-box"><h3>Logs Per Hour</h3><canvas id="lineChart"></canvas></div>
+    </div>
+  </main>
+</div>
+<!-- Threat Intelligence Section -->
+<div style="margin-top:1.5rem;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <h2>🛡 Threat Intelligence Upload</h2>
+  </div>
+
+  <!-- Upload Box -->
+  <div class="chart-box" style="margin-bottom:1rem;">
+    <h3>📄 Upload CERT-In PDF</h3>
+    <div style="display:flex;gap:1rem;align-items:center;margin-top:1rem;flex-wrap:wrap;">
+      <input type="file" id="threat-pdf" accept=".pdf"
+        style="padding:8px;background:#0f172a;color:white;
+               border:1px solid #334155;border-radius:6px;" />
+      <button class="btn-primary" onclick="uploadThreatPDF()">
+        ⬆ Upload & Parse
+      </button>
+      <span id="upload-msg" style="color:#94a3b8;"></span>
+    </div>
+    <div id="upload-result" style="margin-top:0.5rem;"></div>
+  </div>
+
+  <!-- Threat Stats -->
+  <div class="stat-grid" style="grid-template-columns:repeat(6,1fr);">
+    <div class="stat-card red">
+      <h3>Very High</h3><p id="t-very-high">--</p>
+    </div>
+    <div class="stat-card" style="background:#1e293b;">
+      <h3 style="color:#f97316;">High</h3>
+      <p id="t-high" style="color:#f97316;">--</p>
+    </div>
+    <div class="stat-card yellow">
+      <h3>Medium</h3><p id="t-medium">--</p>
+    </div>
+    <div class="stat-card green">
+      <h3>Low</h3><p id="t-low">--</p>
+    </div>
+    <div class="stat-card blue">
+      <h3>Total IPs</h3><p id="t-total">--</p>
+    </div>
+    <div class="stat-card" style="background:#1e293b;">
+      <h3 style="color:#8b5cf6;">Hashes</h3>
+      <p id="t-hashes" style="color:#8b5cf6;">--</p>
+    </div>
+  </div>
+</div>
+
+<!-- Threat Matched Firewall IPs -->
+<div class="chart-box" style="margin-top:1.5rem;">
+  <h3>🚨 Threat IPs Found in Firewall Logs</h3>
+  <table class="log-table" style="margin-top:1rem;">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Source IP</th>
+        <th>Port</th>
+        <th>Action</th>
+        <th>Threat Severity</th>
+        <th>Threat Events</th>
+      </tr>
+    </thead>
+    <tbody id="threat-match-body"></tbody>
+  </table>
+</div>
+<script>
+  checkLogin();
+  buildSidebar('dashboard');
+
+  async function loadDashboard() {
+    try {
+      const res  = await fetch('http://localhost:5000/api/stats');
+      const data = await res.json();
+      document.getElementById('total-logs').textContent  = data.total      || 0;
+      document.getElementById('blocked').textContent     = data.blocked    || 0;
+      document.getElementById('allowed').textContent     = data.allowed    || 0;
+      document.getElementById('unique-ips').textContent  = data.unique_ips || 0;
+
+      new Chart(document.getElementById('pieChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Allowed','Blocked'],
+          datasets: [{ data:[data.allowed,data.blocked], backgroundColor:['#22c55e','#ef4444'] }]
+        },
+        options: { plugins:{ legend:{ labels:{ color:'#e2e8f0' } } } }
+      });
+
+      new Chart(document.getElementById('lineChart'), {
+        type: 'line',
+        data: {
+          labels: data.hours.length ? data.hours : ['No data'],
+          datasets: [{
+            label: 'Log Count',
+            data:  data.counts.length ? data.counts : [0],
+            borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.1)',
+            fill:true, tension:0.4
+          }]
+        },
+        options: {
+          scales: {
+            x:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#1e293b' } },
+            y:{ ticks:{ color:'#94a3b8' }, grid:{ color:'#1e293b' } }
+          },
+          plugins:{ legend:{ labels:{ color:'#e2e8f0' } } }
+        }
+      });
+    } catch(err) { console.error('Dashboard error:', err); }
+  }
+
+  loadDashboard();
+  // ── Threat Intelligence ───────────────────────────────
+async function uploadThreatPDF() {
+  const file = document.getElementById('threat-pdf').files[0];
+  if (!file) { alert('PDF select karo!'); return; }
+
+  document.getElementById('upload-msg').textContent = '⏳ Uploading...';
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res  = await fetch('http://localhost:5000/api/threat/upload', {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('upload-msg').textContent = '';
+      document.getElementById('upload-result').innerHTML = `
+        <div style="background:#052e16;padding:0.75rem;border-radius:6px;
+                    border:1px solid #22c55e;color:#22c55e;">
+          ✅ ${data.message}
+        </div>`;
+      loadThreatStats();
+      loadThreatMatches();
+    } else {
+      document.getElementById('upload-msg').textContent = '❌ ' + data.message;
+    }
+  } catch(err) {
+    document.getElementById('upload-msg').textContent = '❌ Server error!';
+  }
+}
+
+async function loadThreatStats() {
+  try {
+    const res  = await fetch('http://localhost:5000/api/threat/stats');
+    const data = await res.json();
+    document.getElementById('t-very-high').textContent = data.very_high || 0;
+    document.getElementById('t-high').textContent      = data.high      || 0;
+    document.getElementById('t-medium').textContent    = data.medium    || 0;
+    document.getElementById('t-low').textContent       = data.low       || 0;
+    document.getElementById('t-total').textContent     = data.total     || 0;
+    document.getElementById('t-hashes').textContent    = data.hashes    || 0;
+  } catch(err) { console.error(err); }
+}
+
+async function loadThreatMatches() {
+  try {
+    const res     = await fetch('http://localhost:5000/api/threat/match-firewall');
+    const matches = await res.json();
+    const colors  = {
+      'Very High':'#ef4444','High':'#f97316',
+      'Medium':'#f59e0b','Low':'#22c55e'
+    };
+
+    const tbody = document.getElementById('threat-match-body');
+    if (!matches.length) {
+      tbody.innerHTML = `<tr><td colspan="6"
+        style="text-align:center;color:#94a3b8;padding:1rem;">
+        No threat IPs found in firewall logs
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = matches.map(m => `
+      <tr style="background:rgba(239,68,68,0.08);">
+        <td>${m.timestamp}</td>
+        <td><strong style="color:#ef4444;">⚠ ${m.src_ip}</strong></td>
+        <td>${m.port}</td>
+        <td><span class="badge ${m.action}">${m.action}</span></td>
+        <td>
+          <span class="badge"
+            style="background:${colors[m.severity]||'#64748b'};color:white;">
+            ${m.severity}
+          </span>
+        </td>
+        <td style="font-size:0.8rem;color:#94a3b8;">${m.events}</td>
+      </tr>`).join('');
+  } catch(err) { console.error(err); }
+}
+
+loadThreatStats();
+loadThreatMatches();
+</script>
+</body>
+</html>

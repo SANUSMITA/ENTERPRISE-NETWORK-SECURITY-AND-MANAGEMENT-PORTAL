@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | AD Users</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>AD User Management</h1>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid">
+      <div class="stat-card blue"><h3>Total Users</h3><p id="total-users">--</p></div>
+      <div class="stat-card green"><h3>Active</h3><p id="active-users">--</p></div>
+      <div class="stat-card yellow"><h3>Disabled</h3><p id="disabled-users">--</p></div>
+      <div class="stat-card red"><h3>Locked Out</h3><p id="locked-users">--</p></div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <input type="text" id="search-user" placeholder="Search username or name..." />
+      <select id="filter-dept">
+        <option value="">All Departments</option>
+      </select>
+      <select id="filter-status">
+        <option value="">All Status</option>
+        <option value="enabled">Enabled</option>
+        <option value="disabled">Disabled</option>
+        <option value="locked">Locked</option>
+      </select>
+      <button onclick="loadUsers()">🔍 Search</button>
+      <button onclick="openCreateModal()" style="background:#22c55e;">➕ New User</button>
+    </div>
+
+    <!-- Users Table -->
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Full Name</th>
+          <th>Department</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="user-table-body"></tbody>
+    </table>
+  </main>
+</div>
+
+<!-- Create / Edit User Modal -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal-box">
+    <h3 id="modal-title">➕ Create New User</h3>
+    <input type="hidden"   id="edit-id" />
+    <input type="text"     id="input-username" placeholder="Username" />
+    <input type="text"     id="input-fullname" placeholder="Full Name" />
+    <input type="email"    id="input-email"    placeholder="Email" />
+    <input type="password" id="input-password" placeholder="Password (required for new user) *" />
+    <p id="pwd-hint" style="color:#f59e0b; font-size:0.8rem; margin-top:4px;">
+      
+    </p>
+    <select id="input-dept">
+      <option value="">Select Department</option>
+    </select>
+    <select id="input-role">
+      <option value="">Select Role</option>
+    </select>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="saveUser()">💾 Save</button>
+      <button class="btn-gray"    onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin', 'HR Admin'])) {
+    alert('Access Denied!');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('ad-users');
+
+  // ── Load Department & Role Dropdowns from MySQL ───────
+  async function loadDepartments() {
+    try {
+      const res  = await fetch('http://localhost:5000/api/ad/groups');
+      const data = await res.json();
+      const ous    = data.ous    || [];
+      const groups = data.groups || [];
+
+      // Department dropdowns fill karo
+      const inputDept  = document.getElementById('input-dept');
+      const filterDept = document.getElementById('filter-dept');
+
+      inputDept.innerHTML  = '<option value="">Select Department</option>';
+      filterDept.innerHTML = '<option value="">All Departments</option>';
+
+      ous.forEach(ou => {
+        const deptName = ou.name.replace(' Department', '').trim();
+        inputDept.innerHTML  += `<option value="${deptName}">${deptName}</option>`;
+        filterDept.innerHTML += `<option value="${deptName}">${deptName}</option>`;
+      });
+
+      // Role dropdown fill karo
+      const inputRole = document.getElementById('input-role');
+      inputRole.innerHTML = '<option value="">Select Role</option>';
+
+      // Default roles
+      ['User', 'Admin', 'Super Admin'].forEach(role => {
+        inputRole.innerHTML += `<option value="${role}">${role}</option>`;
+      });
+
+      // AD Groups se roles
+      groups.forEach(group => {
+        inputRole.innerHTML += `<option value="${group.name}">${group.name}</option>`;
+      });
+
+    } catch(err) {
+      console.error('Departments/Roles load error:', err);
+    }
+  }
+
+  // ── Load Users Table ──────────────────────────────────
+  async function loadUsers() {
+    const search = document.getElementById('search-user').value;
+    const dept   = document.getElementById('filter-dept').value;
+    const status = document.getElementById('filter-status').value;
+
+    try {
+      const [usersRes, statsRes] = await Promise.all([
+        fetch(`http://localhost:5000/api/ad/users?search=${search}&dept=${dept}&status=${status}`),
+        fetch('http://localhost:5000/api/ad/stats')
+      ]);
+      const users = await usersRes.json();
+      const stats = await statsRes.json();
+
+      document.getElementById('total-users').textContent    = stats.total    || 0;
+      document.getElementById('active-users').textContent   = stats.enabled  || 0;
+      document.getElementById('disabled-users').textContent = stats.disabled || 0;
+      document.getElementById('locked-users').textContent   = stats.locked   || 0;
+
+      if (!users.length) {
+        document.getElementById('user-table-body').innerHTML =
+          '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:2rem;">No users found</td></tr>';
+        return;
+      }
+
+      document.getElementById('user-table-body').innerHTML = users.map(u => `
+        <tr>
+          <td>${u.username}</td>
+          <td>${u.fullname}</td>
+          <td>${u.dept || '—'}</td>
+          <td>${u.email || '—'}</td>
+          <td>${roleBadge(u.role)}</td>
+          <td>${statusBadge(u.status)}</td>
+          <td>
+            <div class="action-btns">
+              <button class="btn-sm edit"   onclick="openEditModal(${u.id})">✏ Edit</button>
+              <button class="btn-sm reset" onclick="resetPwd(${u.id})">🔑 Reset</button>
+              <button class="btn-sm lock"   onclick="toggleLock(${u.id})">
+                ${u.status === 'locked' ? '🔓 Unlock' : '🔒 Lock'}
+              </button>
+              <button class="btn-sm delete" onclick="deleteUser(${u.id})">🗑 Delete</button>
+            </div>
+          </td>
+        </tr>`).join('');
+
+    } catch(err) { console.error(err); }
+  }
+
+  // ── Badges ────────────────────────────────────────────
+  function statusBadge(s) {
+    return s === 'enabled'  ? `<span class="badge-enabled">Enabled</span>`   :
+           s === 'disabled' ? `<span class="badge-disabled">Disabled</span>` :
+                              `<span class="badge-locked">Locked</span>`;
+  }
+
+  function roleBadge(r) {
+    if (!r) return `<span class="badge-disabled">—</span>`;
+    return r.includes('Admin') ? `<span class="badge-admin">${r}</span>` :
+                                 `<span class="badge-disabled">${r}</span>`;
+  }
+
+  // ── Save User ─────────────────────────────────────────
+  async function saveUser() {
+    const id       = document.getElementById('edit-id').value;
+    const username = document.getElementById('input-username').value.trim();
+    const fullname = document.getElementById('input-fullname').value.trim();
+    const email    = document.getElementById('input-email').value.trim();
+    const password = document.getElementById('input-password').value;
+    const dept     = document.getElementById('input-dept').value;
+    const role     = document.getElementById('input-role').value;
+
+    if (!username || !fullname || !email) {
+      alert('Username, Full Name aur Email required hai!');
+      return;
+    }
+    if (!dept) { alert('Department select karo!'); return; }
+    if (!role) { alert('Role select karo!'); return; }
+    if (!id && !password) {
+      alert('Naye user ke liye Password required hai!');
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        id ? `http://localhost:5000/api/ad/users/${id}`
+           : 'http://localhost:5000/api/ad/users',
+        {
+          method:  id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ username, fullname, email, dept, role, password })
+        }
+      );
+      if (res.ok) { closeModal(); loadUsers(); }
+      else { alert('Error saving user. Please try again.'); }
+    } catch(err) { console.error(err); }
+  }
+
+  // ── Delete User ───────────────────────────────────────
+  async function deleteUser(id) {
+    if (!confirm('Are you sure you want to delete this user?')) return;
+    await fetch(`http://localhost:5000/api/ad/users/${id}`, { method: 'DELETE' });
+    loadUsers();
+  }
+
+  // ── Toggle Lock ───────────────────────────────────────
+  async function toggleLock(id) {
+    await fetch(`http://localhost:5000/api/ad/users/${id}/togglelock`, { method: 'POST' });
+    loadUsers();
+  }
+
+  // ── Reset Password ────────────────────────────────────
+async function resetPwd(userId) {
+  const newPwd = prompt('Enter new password:');
+  if (!newPwd) return;
+
+  if (newPwd.length < 4) {
+    alert('Password must be of 4 characters');
+    return;
+  }
+
+  try {
+    const res  = await fetch(
+      `http://localhost:5000/api/ad/users/${userId}/reset-password`,
+      {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body:    JSON.stringify({ password: newPwd })
+      }
+    );
+    const data = await res.json();
+    if (data.success) {
+      alert(`✅ Password successfully reset!`);
+    } else {
+      alert('❌ Password reset failed!');
+    }
+  } catch(err) {
+    alert('❌ Not connected to server');
+  }
+}
+
+  // ── Open Create Modal ─────────────────────────────────
+  async function openCreateModal() {
+    document.getElementById('modal-title').textContent = '➕ Create New User';
+    document.getElementById('edit-id').value = '';
+    ['username', 'fullname', 'email', 'password'].forEach(f =>
+      document.getElementById('input-' + f).value = '');
+    document.getElementById('pwd-hint').style.display = 'block';
+    await loadDepartments();
+    document.getElementById('userModal').classList.add('active');
+  }
+
+  // ── Open Edit Modal ───────────────────────────────────
+  async function openEditModal(id) {
+    document.getElementById('modal-title').textContent = '✏ Edit User';
+    document.getElementById('edit-id').value = id;
+    document.getElementById('input-password').value = '';
+    document.getElementById('pwd-hint').style.display = 'none';
+
+    await loadDepartments();
+
+    try {
+      const res   = await fetch('http://localhost:5000/api/ad/users');
+      const users = await res.json();
+      const user  = users.find(u => u.id === id);
+      if (user) {
+        document.getElementById('input-username').value = user.username;
+        document.getElementById('input-fullname').value = user.fullname;
+        document.getElementById('input-email').value    = user.email  || '';
+        document.getElementById('input-dept').value     = user.dept   || '';
+        document.getElementById('input-role').value     = user.role   || '';
+      }
+    } catch(err) { console.error(err); }
+
+    document.getElementById('userModal').classList.add('active');
+  }
+
+  // ── Close Modal ───────────────────────────────────────
+  function closeModal() {
+    document.getElementById('userModal').classList.remove('active');
+  }
+
+  // ── Init ──────────────────────────────────────────────
+  loadDepartments();
+  loadUsers();
+</script>
+</body>
+</html>

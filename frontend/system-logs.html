@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NetAdmin Pro | System Login History</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="js/auth.js"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main-content">
+    <h1>System Login History</h1>
+    <div class="filter-bar">
+      <input type="text" id="filter-system" placeholder="System name..." />
+      <input type="text" id="filter-user"   placeholder="Username..." />
+      <select id="filter-type">
+        <option value="">All Events</option>
+        <option value="LOGIN">Login</option>
+        <option value="LOGOUT">Logout</option>
+        <option value="FAILED">Failed</option>
+        <option value="LOCKED">Locked</option>
+      </select>
+      <input type="date" id="filter-date" />
+      <button onclick="fetchLogs(1)">🔍 Search</button>
+      <button onclick="resetFilter()" style="background:#334155;">↺ Reset</button>
+      <button onclick="exportCSV()" style="background:#22c55e;">⬇ Export</button>
+    </div>
+    <div class="stat-grid" style="margin-bottom:1.5rem;">
+      <div class="stat-card blue"><h3>Total Events</h3><p id="total-events">--</p></div>
+      <div class="stat-card green"><h3>Successful Logins</h3><p id="total-logins">--</p></div>
+      <div class="stat-card red"><h3>Failed/Locked</h3><p id="total-failed">--</p></div>
+      <div class="stat-card yellow"><h3>Unique Users</h3><p id="unique-users">--</p></div>
+    </div>
+    <table class="log-table">
+      <thead>
+        <tr><th>Timestamp</th><th>System</th><th>IP</th><th>Username</th>
+            <th>Dept</th><th>Event</th><th>Duration</th><th>Note</th></tr>
+      </thead>
+      <tbody id="syslog-body"></tbody>
+    </table>
+    <div id="pagination"></div>
+  </main>
+</div>
+<script>
+  checkLogin();
+  if (!hasPermission(['Super Admin','IT Admin'])) {
+    alert('Access Denied!');
+    window.location.href = 'dashboard.html';
+  }
+  buildSidebar('system-logs');
+
+  async function fetchLogs(page = 1) {
+    const system = document.getElementById('filter-system').value;
+    const user   = document.getElementById('filter-user').value;
+    const event  = document.getElementById('filter-type').value;
+    const date   = document.getElementById('filter-date').value;
+    try {
+      const res  = await fetch(`http://localhost:5000/api/system-logs?system=${system}&user=${user}&event=${event}&date=${date}&page=${page}`);
+      const data = await res.json();
+
+      document.getElementById('total-events').textContent = data.total_records||0;
+      document.getElementById('total-logins').textContent = data.logs.filter(l=>l.event==='LOGIN').length;
+      document.getElementById('total-failed').textContent = data.logs.filter(l=>l.event==='FAILED'||l.event==='LOCKED').length;
+      document.getElementById('unique-users').textContent = new Set(data.logs.map(l=>l.username)).size;
+
+      const colors = {LOGIN:'#22c55e',LOGOUT:'#3b82f6',FAILED:'#ef4444',LOCKED:'#f59e0b'};
+      document.getElementById('syslog-body').innerHTML = data.logs.map(log => `
+        <tr class="${log.event==='FAILED'||log.event==='LOCKED'?'row-deny':''}">
+          <td style="font-size:0.85rem;">${log.timestamp}</td>
+          <td><strong>${log.system_name}</strong></td>
+          <td style="color:#94a3b8;">${log.ip_address}</td>
+          <td>${log.username}</td><td>${log.department}</td>
+          <td><span class="badge" style="background:${colors[log.event]||'#64748b'};color:white;">${log.event}</span></td>
+          <td style="color:#94a3b8;">${log.duration}</td>
+          <td style="font-size:0.8rem;color:#64748b;">${log.note}</td>
+        </tr>`).join('');
+
+      document.getElementById('pagination').innerHTML =
+        Array.from({length:data.total_pages},(_,i)=>
+          `<button onclick="fetchLogs(${i+1})" class="${i+1===page?'active':''}">${i+1}</button>`
+        ).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  function resetFilter() {
+    ['filter-system','filter-user','filter-date'].forEach(id=>
+      document.getElementById(id).value='');
+    document.getElementById('filter-type').value='';
+    fetchLogs(1);
+  }
+
+  function exportCSV() { window.open('http://localhost:5000/api/logs/export'); }
+
+  const sysParam = new URLSearchParams(window.location.search).get('system');
+  if (sysParam) document.getElementById('filter-system').value = sysParam;
+  fetchLogs();
+</script>
+</body>
+</html>
